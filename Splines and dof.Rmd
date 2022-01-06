@@ -1,0 +1,495 @@
+---
+title: "Homework 2"
+subtitle: "95-791 Data Mining"
+author: "Hajra Shahab"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    theme: lumen
+    highlight: pygments
+---
+
+##### To complete this assignment, follow these steps:
+
+1. Rename the `Homework2.Rmd` file downloaded from Canvas as `Homework2_YourName.Rmd`.
+
+2. Replace the "Your Name Here" text in the `author:` field of this Rmd file with your own name.
+
+3. When you have completed the homework and have **checked** that your code both runs in the Console and knits correctly when you click `Knit to HTML`, submit both the `.Rmd` file and the `.html` output file on Canvas.
+
+### Preamble: Loading packages
+
+```{r}
+library(ggplot2)
+library(ISLR)
+library(MASS)
+library(knitr)
+library(splines)
+library(gam)
+library(plyr)
+
+
+cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+
+options(scipen = 4)
+
+```
+
+
+### Problem 1: Placing knots, choosing degrees of freedom
+
+> This question is intended to provide you with practice on manual knot placement, and to improve your understanding of effective degrees of freedom selection for smoothing splines.
+
+> Save the `splines_data.csv` file in the same path as your `rmd` source file. Set the working directory of the current R session to where your source file is located by clicking on Session -> Set Working Directory -> To Source File Location. DO NOT hardcode the absolute path of the working directory in your R code.
+
+```{r}
+#Load Splines data
+splines_data<-read.csv("splines_data.csv")
+head(splines_data)
+
+```
+
+##### **(a)** Use `ggplot` to plot the data, and use `stat_smooth` to overlay a cubic spline with 9 degrees of freedom (i.e. let the function automatically pick the knots based on quantiles). Recall how you fit the cubic spline in Lab 2. What should be the `method` and the `formula` arguments for `stat_smooth`? 
+
+```{r}
+ggplot(data = splines_data, aes(x = x, y = y)) +
+  geom_point(size = 1) +
+  stat_smooth(method = "lm", formula = y ~ bs(x, 9), aes(colour = "Cubic fit")) +
+  scale_colour_discrete("Model") +
+  theme_bw()
+```
+
+##### **(b)** The following command forms the basis functions that get used by the `lm` command to fit a cubic spline with 9 degrees of freedom. Explore this object that is constructed by `bs()`. How many knots are placed?  At which x values are they placed (your answer must specify the x values, not just the percentiles)? See ISLR &sect;7.8.2 for coding hints.
+
+```{r}
+basis.obj <- with(splines_data, bs(x, 9))
+
+#dim(basis.obj)
+attr(basis.obj ,"knots")
+length(attr(basis.obj ,"knots"))
+```
+
+
+- In total, 6 knots are placed. The x values are placed at almost equally spaced intervals, i.e. 14, 28, 42, etc. 
+
+##### **(c)** Instead of specifying the degrees of freedom to the `bs()` function, now try manually selecting knots. To maintain the same model complexity, you should supply a `knots` vector containing 6 values too. Try to pick the knots as optimally as possible. Use `ggplot` and `stat_smooth` to show a plot of the data with the cubic spline with your choice of knots overlaid (use `geom_vline` to show the locations of your knots). Explain your choice of knot location.
+
+```{r}
+#check for x intercept ~ explain your choice of knots (do I need 6 or can I change?)
+knot <- c(2, 5.3, 6.3, 7.4, 8.4, 9.3)
+
+ggplot(data = splines_data, aes(x = x, y = y)) +
+  geom_point(size = 1) + 
+  stat_smooth(method = "lm", formula = y ~ bs(x, knots = knot), aes(colour = "Cubic fit")) +
+  scale_colour_discrete("Model") + geom_vline(xintercept = knot, data = splines_data, stat = "vline",
+    position = "identity", show_guide = TRUE)
+  theme_bw()
+```
+
+-  The logic is to add knots where the function is undergoing a change. We can clearly see that happening at x= 2, 5.3, 6.3, 7.4, 8.4, 9.3. 
+
+##### **(d)** Use the `lm` function to fit two models:  One using the model from part (a), and another using the model you settled on in part (c). Compare the R-squared values. Which model better fits the data?
+
+```{r}
+model1 <- lm(data = splines_data, y ~ bs(x, 10))
+summary(model1)$r.squared
+
+knot <- c(2, 5.3, 6.3, 7.4, 8.4, 9.3)
+
+model2 <- lm(data = splines_data, y ~ bs(x, knots = knot))
+summary(model2)$r.squared
+```
+
+- The R^2 value is higher for the model where we place the knots manually. The closer to 1, the better the R^2. Going by this logic, we can conclude that our knots for model give us a better fit for the data. 
+
+##### **(e)** Repeat (d), but substitute the model from part (a) with another one of df = 15. Keep your manually selected model with 6 knots unchanged. Compare the R-squared values. Now, which model better fits the data?
+
+```{r}
+model1 <- lm(data = splines_data, y ~ bs(x, 15))
+summary(model1)$r.squared
+
+knot <- c(2, 5.3, 6.3, 7.4, 8.4, 9.3)
+
+model2 <- lm(data = splines_data, y ~ bs(x, knots = knot))
+summary(model2)$r.squared
+
+```
+
+- As we increase the df and make our model more complex, the r-squared term for model1 becomes higher than that of model2 where we placed the knots manually. 
+
+##### **(f)** Use the `smooth.spline` command with `cv = TRUE` to fit a smoothing spline to the data.  Use `ggplot` to draw your smoothing spline. What degrees of freedom does the CV routine select for the smoothing spline?  How does this compare to the degrees of freedom of your model from part (c)?
+
+```{r}
+fit.ss1 <- with(splines_data, smooth.spline(x, y, cv = TRUE))
+fit.ss1$df
+
+ggplot(data = splines_data, aes(x = x, y = y)) +
+  geom_point(size = 1) +
+  geom_line (aes(y = fit.ss1$y), size = 1, color = "red") + 
+  theme_bw()
+```
+
+
+- The df selected for smoothing spline is 29.56561. Our model in part (c) uses total 10 dfs (9 excluding intercept) and does a good job at describing data.  
+
+
+##### **(g)** Use the `smooth.spline` command with `cv = TRUE` to fit a smoothing spline to the **first half** of the data ($x <= 5.0$).  What degrees of freedom does the CV routine select for this smoothing spline?
+
+```{r}
+half_data <- splines_data[splines_data$x <= 5.,]
+fit.ss2 <- with(half_data, smooth.spline(x, y, cv = TRUE))
+fit.ss2$df
+```
+
+- The CV routine selects 8.354332 dfs for this smoothing spline. 
+
+##### **(h)** Repeat part (g), this time fitting the smoothing spline on just the **second half** of the data ($x > 5.0$). How does the optimal choice for the second half of the data compare to the optimal choice for the first half? Are they very different? Can you explain what's happening?
+
+```{r}
+half_data2 <- splines_data[splines_data$x > 5.,]
+fit.ss2 <- with(half_data2, smooth.spline(x, y, cv = TRUE))
+fit.ss2$df
+
+```
+    
+- The CV routine selects 18.47839 dfs for this smoothing spline. While this seems fine and it makes to use a higher degree of freedom for 2nd half of the data as it gets more wiggly.  
+
+
+### Problem 2: Cross-validation
+
+> This problem asks you to code up your own cross-validation routine that will produce $K$-fold CV error estimates for **polynomial regression**, **cubic splines**, and **smoothing splines**.
+
+##### (a) The helper functions: `polyTestErr()`, `cubicSplineTestErr()`, and `smoothSplineTestErr()`
+
+In Lab 2 Question 5, you created a function `polyTestErr()` that trains a Degree-d polynomial regression on the **training data** and returns its prediction error on the **test data**. Copy your function below. It is also OK if you use the function from the Lab 2 answers.
+
+```{r}
+# Function that trains a degree d polynomial on the training data
+# and returns its prediction error on the test data
+polyTestErr <- function(dat, train, d) {
+  poly.fit <- lm(y ~ poly(x, degree = d), data = dat, subset = train)
+  preds <- predict(poly.fit, dat)[-train]
+  mean((dat$y[-train] - preds)^2)
+}
+```
+
+The functions `cubicSplineTestErr()` and `smoothSplineTestErr()` are similar to `polyTestErr()` in that, given a complexity level, they also train a model of their respective type on the **training data** and returns its prediction error on the **test data**. The functions `cubicSplineTestErr()` and `smoothSplineTestErr()` should take in the following three arguments:
+
+* `dat` (same as `polyTestErr()`): a data frame with 2 columns: the first column named "x" (the predictor), and the second named "y" (the response);
+* `train` (same as `polyTestErr()`): a vector containing the **indices** of the observations in `dat` which will be used for model training. Note that this is similar to `train` in Question 2;
+* `df`: a number specifying the **degrees of freedom** of the model to be trained. **READ THE FOLLOWING NOTES CAREFULLY:** 
+  + Note 1: While in `polyTestErr()` we specify the degree of the polynomial regression, here we specify the **degrees of freedom** of the model as its complexity measure.
+  + Note 2: We saw in lecture that a cubic spline with $K$ interior knots has $K+3$ degrees of freedom.  Thus we cannot form a cubic spline with `df` of 1 or 2. Similarly, the `smooth.spline()` fitting function in **R** requires that `df` > 1 (i.e. we cannot form a smoothing spline with `df` of 1). **If the given method cannot be fit at the specified degrees of freedom, your function should return `NA`.**
+  + Note 3: A polynomial regression of degree `d` has `d` degrees of freedom (excluding the intercept to be consistent with the other models), which is of the same level of complexity as a cubic spline model or smoothing spline model with `d` degrees of freedom.
+
+Similar to `polyTestErr()`, `cubicSplineTestErr()` and `smoothSplineTestErr()` should also return the **Test MSE** of the model, i.e. the MSE you get when using the trained model to predict the **test** observations.
+
+The function headers are provided below.
+
+```{r}
+# Function that trains a cubic spline with df degrees of freedom
+# The model is fit on the training data, 
+# and  its prediction error is calculated on the test data
+cubicSplineTestErr <- function(dat, train, df) {
+  if (df >= 3) {
+    cubic.fit <- lm(y ~ bs(x, df=df), data = dat, subset = train)
+  preds <- predict(cubic.fit, dat)[-train]
+  mean((dat$y[-train] - preds)^2)
+} else {
+  NA
+  }
+} 
+
+splines_xy = splines_data[,c("x","y")]
+colnames(splines_xy) = c("x","y")
+train = 1:300
+
+cubicSplineTestErr(splines_xy, train, 3)
+
+# Function that trains a smoothing spline with df degrees of freedom
+# The model is fit on the training data, 
+# and  its prediction error is calculated on the test data
+smoothSplineTestErr <- function(dat, train, df) {
+  if (df > 1) {
+    spline.fit <- with(dat$x[train],dat$y[train], df=df)
+    preds <- predict(spline.fit, dat$x)$y[-train]
+    mean((dat$y[-train] - preds)^2)
+    } else { 
+    NA
+    }
+}
+```
+
+
+##### (b) The main cross-validation function: `smoothCV()`
+
+Now let's create the main function that implements cross-validation routine. Create a function called `smoothCV()` according to the following specifications:
+
+**Inputs**:
+
+| Argument | Description                                           | 
+|----------|-------------------------------------------------------|
+|  `x`     | a vector giving the values of a predictor variable    |
+|  `y`     | a vector giving the values of the response variable   |
+|  `K`     | the number of folds to use in the validation routine  |
+| `df.min` | the smallest number of degrees of freedom to consider |
+| `df.max` | the largest number of degrees of freedom to consider  |
+
+
+**Output**:
+
+Your function should return a `data.frame` object giving the $K$-fold error estimates for: polynomial regression, cubic splines, and smoothing splines, with the degrees of freedom ranging from `df.min` to `df.max`.  The data frame should have three columns:  `df`, `method`, `error`. The `method` names should be **exactly the same** as shown in the sample output below, i.e. "poly", "cubic.spline", and "smoothing.spline". 
+
+**Sample output:**  
+
+```
+ df           method cv.error
+  1             poly     25.4
+  1     cubic.spline       NA
+  1 smoothing.spline       NA
+  2             poly     21.1
+  2     cubic.spline       NA
+  2 smoothing.spline     20.0
+  3             poly     15.2
+  3     cubic.spline     15.2
+  3 smoothing.spline     16.1
+```
+**Note**: The sample output above is to illustrate the format of the output only. The numbers are fake. You're not supposed to check your smoothCV results against these numbers.
+
+**Note**: In the sample output above, we had `df.min = 1` and `df.max = 3`. The output contains the cv errors for a total of 9 models: a polynomial regression, a cubic spline, and a smoothing spline model for each degree of freedom. Notice that the cv.error is `NA` for cubic splines with `df` of 1 and 2 and smoothing spline with `df` of 1 due to the reason in Part (a) Note 2. **If the given method cannot be fit at the specified degrees of freedom, you should report the cv.error as NA, as shown above.**
+
+**Note**: When $n$ is not divisible by $K$, it will not be possible to partition the sample into $K$ *equally sized groups*. You should make the groups as equally sized as possible. When the groups are of unequal size, the preferred way of calculating the average MSE is by using a **weighted average**.  More precisely, if $n_k$ is the number of observations in fold $k$ and $MSE_k$ is the MSE estimated from fold $k$, the weighted average estimate of CV-MSE is:
+
+$$ CV_{K} = \sum_{k = 1}^K \frac{n_k}{n} MSE_k $$
+
+It's easy to check that if $n$ is evenly divisible by $K$ then each $n_k = n/K$, and so the above expression reduces to the formula you saw in class: $CV_{K} = \frac{1}{K}\sum_{k = 1}^K MSE_k$
+
+**Note**: There are more than one way of implementing it. A typical way is to use a nested loop, with the outer one looping over the degrees of freedom and the inner one iterating over the k folds. It's also perfectly fine to have it the other way around (k folds as the outer loop and degrees of freedom as the inner loop). 
+
+A function header is provided for you to get you started.
+
+
+```{r}
+#smoothCV <- function(x, y, K = 10, df.min = 1, df.max = 10) {
+ # output.dat <- data.frame(x, y) #x is the first column while y is the second column 
+
+  
+#  out.error <- data.frame(df = rep(df.min:df.max, each = 3),
+ #                       method = rep(c("poly", "cubic.spline", "smoothing.spline"), df.max - df.min + 1), cv.error = double())
+  
+
+#using sample() to randomize assignment 
+#  random <- sample(n)
+  
+#breaking data into folds for cross validation 
+  #fold.break <- round(seq(1, n+1, length.out = K + 1))
+  #fold.start <- fold.break[1:K]
+  #fold.end <- fold.break[2: (K+1)] - 1
+  #fold.end[K] <- n 
+  #fold.size <- fold.end - fold.start + 1 
+  
+  
+  #fold.err <- matrix(0, nrow = K, ncol = 3)
+  #colnames(fold.err) <- c("poly", "cubic.spline", "smoothing.spline")
+ 
+#begin nested loop 
+ # for(df in 1:10) {
+  #  for(k in 1:K) {
+   #   train <- random[-fold.start[k]:fold.end[k]]
+
+    #  poly.cv <- polyTestErr(dat, train, df)
+     # cubic.spline.cv <- cubicSplineTestErr(dat, train, df)
+    #  smooth.spline.cv <- smoothSplineTestErr(dat, train, df)
+  #  }
+#  out.error 
+#}
+```
+
+
+##### **(c)** We have provided a function for plotting the results of `smoothCV()` with the following specifications:
+
+**Inputs**: 
+
+| Argument         | Description                                                      | 
+|------------------|------------------------------------------------------------------|
+| `smoothcv.err`   | a data frame obtained by running the `smoothCV` function         |
+| `K`              | the number of folds used in the CV routine                       |
+| `title.text`     | the desired title for the plot                                   |
+| `y.scale.factor` | if provided, a relative upper bound on the upper y-axis limit    |
+
+**Additional details**
+
+- `smoothcv.err`: This data frame has the exact structure of the `smoothCV()` output illustrated in the previous part of this problem.  
+- `y.scale.factor`: If the user provided a value of `y.scale.factor`, the function sets the y-axis limits of the plot to (`lower`, `upper`), where `lower` is the *smallest CV error of any method for any choice of* `df`, and `upper` is `y.scale.factor * lower`. You may find this parameter useful when some models have disproportionally large errors which makes it difficult to discern the models with lower errors on the plot. 
+
+**Output**: A plot containing three curves, each representing the cv errors of one model type with varying degrees of freedom.
+
+##### **To-do**: Add comments to the code below indicating what each line of code is doing. 
+
+
+```{r}
+# This plotting approach has a facet option which allows the user to show
+# three separate plots instead of overlaying the curves
+# If y.scale.factor is non-null, the range of the 
+# y-axis for the plot is restricted to y.min to y.min*y.scale.factor
+plot.smoothCV <- function(smoothcv.err, K, title.text = "", facet = FALSE,
+                          y.scale.factor = NULL) {
+#This converts method names such as from "poly to Polynomial", "cubic.spline to Cubic spline", & "smoothing.spline to #Smoothing Spline"
+  dat <- transform(smoothcv.err, 
+                   method = mapvalues(method,
+                                      c("poly", "cubic.spline", "smoothing.spline"),
+                                      c("Polynomial", "Cubic spline", "Smoothing Spline")
+                                      )
+                   )
+#Variables generated which would become axes labels  
+  x.text <- "Degrees of Freedom"
+  y.text <- paste0(K, "-fold CV Error")
+  
+#ggplot created and stored in 'p' which includes data, aes and other elements including color within aes 
+  p <- ggplot(data = dat, aes(x = df, y = cv.error, colour = method)) 
+  
+#use p and add a line, scatter plot, x and y labels, and title 
+  p <- p + geom_line() + geom_point() + xlab(x.text) + ylab(y.text) +
+          ggtitle(title.text)
+  
+#set an if condition such that if provided a value of `y.scale.factor`, y-axis range is adjusted 
+  if(!is.null(y.scale.factor)) {
+    min.err <- min(dat$cv.error, na.rm = TRUE)
+    p <- p + ylim(min.err, y.scale.factor * min.err)
+  }
+
+#display a separate plot when facet = TRUE 
+  if(!facet) {
+    print(p)
+  } else {
+    print(p + facet_wrap("method"))
+  }
+}
+```
+
+
+##### **(d)** We are going to load the `bikes` dataset and prepare it like in Homework 1.
+
+
+```{r}
+# Load bikes data (same folder as this file)
+bikes <- read.csv("bikes.csv", header = TRUE)
+
+# Transform temp and atemp to degrees C instead of [0,1] scale
+# Transform humidity to %
+# Transform wind speed (multiply by 67, the normalizing value)
+
+bikes <- transform(bikes,
+                   temp = 47 * temp - 8,
+                   atemp = 66 * atemp - 16,
+                   hum = 100 * hum,
+                   windspeed = 67 * windspeed)
+
+# The mapvalues() command from the plyr library allows us to easily
+# rename values in our variables.  Below we use this command to change season
+# from numeric codings to season names.
+
+bikes <- transform(bikes, 
+                   season = plyr::mapvalues(season,
+                                                   c(1,2,3,4),
+                                                   c("Winter", "Spring", "Summer", "Fall")))
+
+```
+
+
+##### **(e)** Use your `smoothCV` function with **10-fold** cross-validation to determine the best choice of **model** and **degrees of freedom** for modeling the relationship between `cnt` and **each** of these inputs: `mnth`, `atemp`, `hum`, and `windspeed`. Set `df.min=1` and `df.max=10` for each of your `smoothCV()` calls. Rely on the `plot.smoothCV` plotting routine to support your choice of model for each of the inputs. 
+
+**Hint:** Use the `y.scale.factor` argument of your `plot.smoothCV` function wisely.  If you see that a particular model's error starts to blow up as `df` increases, you should set `y.scale.factor` appropriately to prevent the extremely large error estimates from misleading you in your assessment of which model to use.
+
+##### CV and Plot: CNT ~ MNTH
+
+```{r}
+#plot.smoothCV(smoothCV(x = bikes$mnth, 
+ #                   y = bikes$cnt, 
+  #                  df.min = 1, 
+   #                 df.max = 10, 
+    #                K = 10
+     #               "Bike Count v/s Month")
+
+```
+
+Your choice of model and degrees of freedom for CNT ~ MNTH:
+
+Justification: 
+
+
+##### CV and Plot: CNT ~ ATEMP
+```{r}
+#plot.smoothCV(smoothCV(x = bikes$atemp, 
+ #                    y = bikes$cnt, 
+  #                   df.min = 1, 
+   #                  df.max = 10, 
+    #                 K = 10,
+     #                "Bike Count v/s Atemp")
+```
+
+Your choice of model and degrees of freedom for CNT ~ ATEMP:
+
+Justification: 
+
+
+##### CV and Plot: CNT ~ HUM
+```{r}
+#plot.smoothCV(smoothCV(x = bikes$hum, 
+ #                  y = bikes$cnt, 
+  #                 df.min = 1, 
+   #                df.max = 10, 
+     #               K = 10,
+    #               "Bike Count v/s Humidity")
+```
+
+Your choice of model and degrees of freedom for CNT ~ HUM:
+
+Justification: 
+
+##### CV and Plot: CNT ~ WINDSPEED
+```{r}
+#plot.smoothCV(smoothCV(x = bikes$windspeed, 
+ #                        y = bikes$cnt, 
+  #                       df.min = 1, 
+   #                      df.max = 10,
+    #                    K = 10, 
+     #                  "Bike Count v/s Windspeed") 
+```
+
+Your choice of model and degrees of freedom for CNT ~ WINDSPEED:
+
+Justification:
+
+
+##### **(f)**  Use the `gam` library and the **models you selected in Part (e)** to fit an **additive model** of `cnt` on `mnth`, `atemp`, `hum` and `windspeed`. Name your GAM model `gam.fit`. Use the `plot` command on your `gam.fit` object with the arguments `se = TRUE, col = 'darkgreen', lwd = 2` to produce plots of the fitted curves. (See `?plot.gam` for details. You don't need to use `ggplot` here.)
+
+**Note**: Refer to ISLR &sect;7.8.3 for coding hints. Note that in `gam` library you need to use the `s()` function to represent a smoothing spline, not the `smooth.spline()` function you used before.
+
+```{r}
+
+#Your code here
+gam.fit <- gam(cnt ~ poly(mnth, 2) + poly(atemp, 3) + s(hum, 4) + windspeed, data = bikes) 
+# Ensure that all 4 model fits appear in the same figure
+par(mfrow = c(1,4))
+# Write your plot() command below this comment
+plot(gam.fit, se = TRUE, col = 'darkgreen', lwd = 2) 
+```
+
+
+##### **(g)** Use your `gam.fit` model from part (f). Compare the % deviance explained of your Additive Model to the R-squared from running a **multiple linear regression** of `cnt` on the same input variables. Does the Additive Model considerably outperform the linear regression model?
+
+> The "% deviance explained" is the Generalized Additive Model analog of R-squared. It is exactly equal to the R-squared for regression models that can be fit with both the `gam` and `lm` functions. The code for calculating the % deviance explained is given below (you need to uncomment it).
+
+
+```{r}
+deviance_cal<-1 - gam.fit$deviance / gam.fit$null.deviance
+deviance_cal
+
+lm.fit <- lm(cnt ~ mnth + atemp + hum + windspeed, data = bikes)
+summary(lm.fit)$r.squared
+```
+
+
+- The % deviance is much greater than the R-squared of linear regression fit. It does considerably outperform the linear regression model. 
